@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Top-Down Multiplayer RPG with Worlds & Shops</title>
+<title>RPG Multiplayer with Dungeons</title>
 <style>
 body{margin:0;overflow:hidden;background:#1a1a1a;font-family:sans-serif;color:white}
 canvas{display:block;}
@@ -21,30 +21,29 @@ canvas{display:block;}
 <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
 <script>
 const canvas=document.getElementById("gameCanvas"), ctx=canvas.getContext("2d");
-function resize(){canvas.width=window.innerWidth;canvas.height=window.innerHeight;}
+function resize(){canvas.width=window.innerWidth; canvas.height=window.innerHeight;}
 window.addEventListener("resize",resize); resize();
 
-const keys={}, speed=3, attackRange=40, attackDamage=20, enemyDamage=10;
+const keys={}, speed=3;
 window.addEventListener("keydown",e=>keys[e.key]=true);
 window.addEventListener("keyup",e=>keys[e.key]=false);
 
+// Gun setup
 const gun=Gun({peers:['https://gun-manhattan.herokuapp.com/gun']});
 const playersRef=gun.get('players');
+const worldsRef=gun.get('worlds');
+const dungeonsRef=gun.get('dungeons');
 const enemiesRef=gun.get('enemies');
 const lootRef=gun.get('loot');
-const chatRef=gun.get('chat');
-const worldsRef=gun.get('worlds');
 const inventoryRef=gun.get('inventory');
+const chatRef=gun.get('chat');
 
 const localId=Math.random().toString(36).substr(2,9);
 const localName=prompt("Enter your name")||"Player"+localId.slice(0,4);
-let currentWorld="world1";
-
-const localPlayer={x:400,y:300,color:"#"+Math.floor(Math.random()*16777215).toString(16),size:30,health:100,attack:false,name:localName,score:0,world:currentWorld};
+const localPlayer={x:400,y:300,size:30,color:"#"+Math.floor(Math.random()*16777215).toString(16),health:100,score:0,currentLocation:{type:"world",id:"world1"}};
 playersRef.get(localId).put(localPlayer);
 
-const players={}; players[localId]=localPlayer;
-const enemies={}; const loot={}; const worlds={}; const inventory={};
+const players={}, enemies={}, loot={}, inventory={}, worlds={}, dungeons={};
 
 // Chat
 const chatInput=document.getElementById("chatInput");
@@ -62,63 +61,55 @@ chatRef.map().on(data=>{
   messagesDiv.appendChild(div); messagesDiv.scrollTop=messagesDiv.scrollHeight;
 });
 
-// Listen for all players
+// Listen for multiplayer updates
 playersRef.map().on((data,id)=>{ if(!data) return; players[id]=data; });
-// Enemies update
 enemiesRef.map().on((data,id)=>{ if(!data) return; enemies[id]=data; });
-// Loot update
 lootRef.map().on((data,id)=>{ if(!data) return; loot[id]=data; });
-// Worlds
 worldsRef.map().on((data,id)=>{ if(!data) return; worlds[id]=data; });
-// Inventory
+dungeonsRef.map().on((data,id)=>{ if(!data) return; dungeons[id]=data; });
 inventoryRef.map().on((data,id)=>{ if(!data) return; inventory[id]=data; });
 
-// === Worlds setup ===
-function setupWorld(id){
-  if(!worlds[id]){
-    worldsRef.get(id).put({
-      obstacles:[{x:600,y:400,w:200,h:50},{x:1200,y:800,w:100,h:300},{x:900,y:1500,w:300,h:50}],
-      shops:[{x:300,y:300,items:[{name:"Potion",cost:5}]}]
-    });
-  }
-}
-setupWorld("world1");
-setupWorld("world2");
-
-// === Inventory setup ===
-if(!inventory[localId]) inventoryRef.get(localId).put({items:[]});
-
-// === Helper Functions ===
+// Helper
 function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
 function checkCollision(x,y,size,objs){for(const o of objs)if(x+size/2>o.x&&x-size/2<o.x+o.w&&y+size/2>o.y&&y-size/2<o.y+o.h)return true;return false;}
-function respawn(player){player.x=400;player.y=300;player.health=100;}
 function addMessage(msg){const d=document.createElement("div");d.className="message";d.textContent=msg;messagesDiv.appendChild(d);messagesDiv.scrollTop=messagesDiv.scrollHeight;}
+function respawn(p){p.x=400;p.y=300;p.health=100;}
+
+// === World/Dungeon Setup
+function setupWorld(id){
+  if(!worlds[id]){
+    worldsRef.get(id).put({obstacles:[{x:500,y:500,w:200,h:50}],shops:[{x:300,y:300,items:[{name:"Potion",cost:5}]}],dungeonEntrance:{x:800,y:800,dungeonId:"dungeon1"}});
+  }
+}
+function setupDungeon(id){
+  if(!dungeons[id]){
+    dungeonsRef.get(id).put({obstacles:[{x:100,y:100,w:100,h:50}],enemies:[{x:200,y:200,size:25,health:50}],loot:[]});
+  }
+}
+setupWorld("world1"); setupDungeon("dungeon1");
 
 // === Game Update ===
 function update(){
-  let worldData = worlds[currentWorld] || {obstacles:[], shops:[]};
-
-  let nx=localPlayer.x, ny=localPlayer.y;
-  if(keys["w"])ny-=speed;if(keys["s"])ny+=speed;if(keys["a"])nx-=speed;if(keys["d"])nx+=speed;
-  if(!checkCollision(nx,ny,localPlayer.size,worldData.obstacles)){localPlayer.x=nx;localPlayer.y=ny;}
-
-  // Shop interaction
-  for(const shop of worldData.shops){
-    if(distance(localPlayer,shop)<50 && keys["e"]){
-      for(const it of shop.items){
-        if(localPlayer.score>=it.cost){
-          localPlayer.score-=it.cost;
-          let inv=inventory[localId]||{items:[]};
-          inv.items.push(it.name);
-          inventoryRef.get(localId).put(inv);
-          addMessage(`Bought ${it.name}!`);
-        }
-      }
+  let loc = localPlayer.currentLocation;
+  let currentObstacles = [];
+  let shops = [];
+  if(loc.type==="world"){
+    const w = worlds[loc.id]; if(w){currentObstacles=w.obstacles||[]; shops=w.shops||[];}
+    // Enter dungeon
+    if(w && w.dungeonEntrance && distance(localPlayer,w.dungeonEntrance)<30 && keys["e"]){
+      localPlayer.currentLocation={type:"dungeon",id:w.dungeonEntrance.dungeonId};
+      localPlayer.x=100; localPlayer.y=100;
+      addMessage("Entered Dungeon!");
     }
+  }else if(loc.type==="dungeon"){
+    const d = dungeons[loc.id]; if(d){currentObstacles=d.obstacles||[];}
   }
 
-  // TODO: enemies, loot pickup, combat same as previous code
-  // For simplicity, re-use previous enemy/loot code with world filter
+  // Movement
+  let nx=localPlayer.x, ny=localPlayer.y;
+  if(keys["w"])ny-=speed;if(keys["s"])ny+=speed;if(keys["a"])nx-=speed;if(keys["d"])nx+=speed;
+  if(!checkCollision(nx,ny,localPlayer.size,currentObstacles)){localPlayer.x=nx; localPlayer.y=ny;}
+
   playersRef.get(localId).put(localPlayer);
 }
 
@@ -127,22 +118,28 @@ function draw(){
   const camX=localPlayer.x-canvas.width/2, camY=localPlayer.y-canvas.height/2;
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  let worldData = worlds[currentWorld] || {obstacles:[], shops:[]};
+  // Draw world/dungeon obstacles
+  let loc = localPlayer.currentLocation;
+  let obs = [];
+  if(loc.type==="world"){ let w = worlds[loc.id]; if(w) obs=w.obstacles||[]; } 
+  else if(loc.type==="dungeon"){ let d = dungeons[loc.id]; if(d) obs=d.obstacles||[]; }
+  ctx.fillStyle="#555"; for(const o of obs)ctx.fillRect(o.x-camX,o.y-camY,o.w,o.h);
 
-  // Obstacles
-  ctx.fillStyle="#555"; for(const o of worldData.obstacles)ctx.fillRect(o.x-camX,o.y-camY,o.w,o.h);
-
-  // Shops
-  ctx.fillStyle="cyan"; for(const s of worldData.shops)ctx.fillRect(s.x-10-camX,s.y-10-camY,20,20);
+  // Draw shops/dungeon entrance
+  if(loc.type==="world"){ let w = worlds[loc.id]; if(w){
+    ctx.fillStyle="cyan"; for(const s of w.shops)ctx.fillRect(s.x-10-camX,s.y-10-camY,20,20);
+    if(w.dungeonEntrance) ctx.fillStyle="purple", ctx.fillRect(w.dungeonEntrance.x-10-camX,w.dungeonEntrance.y-10-camY,20,20);
+  }}
 
   // Players
-  for(const id in players){const p=players[id]; if(p.world===currentWorld){
+  for(const id in players){const p=players[id]; if(JSON.stringify(p.currentLocation)===JSON.stringify(localPlayer.currentLocation)){
     ctx.fillStyle=p.color; ctx.fillRect(p.x-p.size/2-camX,p.y-p.size/2-camY,p.size,p.size);
     ctx.fillStyle="red"; ctx.fillRect(p.x-15-camX,p.y-p.size/2-10-camY,30*(p.health/100),5);
     ctx.strokeStyle="black"; ctx.strokeRect(p.x-15-camX,p.y-p.size/2-10-camY,30,5);
     ctx.fillStyle="white"; ctx.font="12px sans-serif"; ctx.fillText(`${p.name} (Score:${p.score})`,p.x-15-camX,p.y-p.size/2-15-camY);
   }}
 }
+
 function loop(){update();draw();requestAnimationFrame(loop);}
 loop();
 </script>
