@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Top-Down RPG Multiplayer (Functional)</title>
+<title>Top-Down RPG Multiplayer</title>
 <style>
 body { margin:0; overflow:hidden; background:#1a1a1a; font-family:sans-serif; color:white;}
-canvas { display:block; background:#3a3a3a; }
+canvas { display:block; }
 #chat {
   position:absolute; bottom:10px; left:10px; width:300px;
   max-height:200px; overflow-y:auto; background: rgba(0,0,0,0.6); padding:5px; border-radius:5px;
@@ -18,7 +18,7 @@ canvas { display:block; background:#3a3a3a; }
 </style>
 </head>
 <body>
-<canvas id="gameCanvas" width="800" height="600"></canvas>
+<canvas id="gameCanvas"></canvas>
 
 <div id="chat">
   <div id="messages"></div>
@@ -26,132 +26,93 @@ canvas { display:block; background:#3a3a3a; }
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
-
 <script>
+// === Canvas Setup ===
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
+function resizeCanvas(){
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener("resize", resizeCanvas);
+resizeCanvas();
+
+// === Player Controls ===
 const keys = {};
 window.addEventListener("keydown", e => keys[e.key] = true);
 window.addEventListener("keyup", e => keys[e.key] = false);
 
+// === World & Obstacles ===
 const world = { width:2000, height:2000 };
-const speed = 3;
-const attackRange = 40;
-const attackDamage = 10;
-
-// Obstacles
 const obstacles = [
   {x:600, y:400, w:200, h:50},
   {x:1200, y:800, w:100, h:300},
   {x:900, y:1500, w:300, h:50}
 ];
 
-// GUN.js setup
+// === GUN.js Multiplayer ===
 const gun = Gun();
 const playersRef = gun.get('players');
 const chatRef = gun.get('chat');
 
-// Local player
 const localId = Math.random().toString(36).substr(2,9);
-const localPlayer = { x:400, y:300, color: "#"+Math.floor(Math.random()*16777215).toString(16), size:30, health:100, attack:false };
+const localName = prompt("Enter your name") || "Player"+localId.slice(0,4);
+const localPlayer = { x:400, y:300, color: "#"+Math.floor(Math.random()*16777215).toString(16), size:30, health:100, attack:false, name:localName, score:0 };
 playersRef.get(localId).put(localPlayer);
 
-// Players list
 const players = {};
 players[localId] = localPlayer;
 
-// Chat
+// === Chat System ===
 const chatInput = document.getElementById("chatInput");
 const messagesDiv = document.getElementById("messages");
+
 chatInput.addEventListener("keydown", e=>{
   if(e.key==="Enter" && chatInput.value.trim()!==""){
-    chatRef.set({id:localId,msg:chatInput.value});
+    chatRef.set({id:localId,msg:chatInput.value,name:localPlayer.name});
     chatInput.value="";
   }
 });
+
 chatRef.map().on(data=>{
   if(!data) return;
   const div = document.createElement("div");
   div.className="message";
-  div.textContent=`Player ${data.id.slice(0,4)}: ${data.msg}`;
+  div.textContent=`${data.name || "Player"}: ${data.msg}`;
   messagesDiv.appendChild(div);
   messagesDiv.scrollTop = messagesDiv.scrollHeight;
 });
 
-// Listen for all players updates
+// Listen for all player updates
 playersRef.map().on((data,id)=>{
   if(!data) return;
   players[id] = data;
-
-  // Detect attack
-  if(data.attack && id!==localId){
-    // Check if local player is hit
-    const dx = data.x - localPlayer.x;
-    const dy = data.y - localPlayer.y;
-    if(Math.sqrt(dx*dx + dy*dy) < attackRange){
-      localPlayer.health = Math.max(0, localPlayer.health - attackDamage);
-    }
-  }
 });
 
-// Remove player if deleted
-playersRef.map().on((data,id)=>{
-  if(data===null && players[id]){
-    addMessage(`Player ${id.slice(0,4)} left`);
-    delete players[id];
-  }
-});
-
-// Join message
-addMessage(`You joined the game! Your ID: ${localId.slice(0,4)}`);
-
-function addMessage(msg){
-  const div = document.createElement("div");
-  div.className="message";
-  div.textContent = msg;
-  messagesDiv.appendChild(div);
-  messagesDiv.scrollTop = messagesDiv.scrollHeight;
-}
-
-// Collision check
-function checkCollision(x,y,size){
-  for(const obs of obstacles){
-    if(x + size/2 > obs.x && x - size/2 < obs.x + obs.w &&
-       y + size/2 > obs.y && y - size/2 < obs.y + obs.h){
-      return true;
-    }
-  }
-  return false;
-}
-
-// Update local player
-function updatePosition(){
-  playersRef.get(localId).put(localPlayer);
-}
-
+// === Game Loop ===
 function update(){
   let nextX = localPlayer.x;
   let nextY = localPlayer.y;
 
-  if(keys["w"]) nextY -= speed;
-  if(keys["s"]) nextY += speed;
-  if(keys["a"]) nextX -= speed;
-  if(keys["d"]) nextX += speed;
+  if(keys["w"]) nextY -= 3;
+  if(keys["s"]) nextY += 3;
+  if(keys["a"]) nextX -= 3;
+  if(keys["d"]) nextX += 3;
 
-  if(!checkCollision(nextX,nextY,localPlayer.size)){
-    localPlayer.x = nextX;
-    localPlayer.y = nextY;
+  // Collision check
+  for(const obs of obstacles){
+    if(nextX + localPlayer.size/2 > obs.x && nextX - localPlayer.size/2 < obs.x + obs.w &&
+       nextY + localPlayer.size/2 > obs.y && nextY - localPlayer.size/2 < obs.y + obs.h){
+      nextX = localPlayer.x;
+      nextY = localPlayer.y;
+      break;
+    }
   }
 
-  // Attack
-  if(keys[" "]){ // Spacebar
-    localPlayer.attack = true;
-  } else {
-    localPlayer.attack = false;
-  }
-
-  updatePosition();
+  localPlayer.x = nextX;
+  localPlayer.y = nextY;
+  playersRef.get(localId).put(localPlayer);
 }
 
 function draw(){
@@ -182,18 +143,14 @@ function draw(){
 
     // Health bar
     ctx.fillStyle="red";
-    ctx.fillRect(p.x-15-camX, p.y - p.size/2 -10 - camY, 30*(p.health/100),5);
+    ctx.fillRect(p.x-15-camX, p.y-p.size/2-10-camY, 30*(p.health/100),5);
     ctx.strokeStyle="black";
-    ctx.strokeRect(p.x-15-camX, p.y - p.size/2 -10 - camY,30,5);
+    ctx.strokeRect(p.x-15-camX, p.y-p.size/2-10-camY,30,5);
 
-    // Draw attack indicator
-    if(p.attack){
-      ctx.strokeStyle="yellow";
-      ctx.lineWidth=3;
-      ctx.beginPath();
-      ctx.arc(p.x-camX, p.y-camY, attackRange,0,Math.PI*2);
-      ctx.stroke();
-    }
+    // Name & score
+    ctx.fillStyle="white";
+    ctx.font="12px sans-serif";
+    ctx.fillText(`${p.name} (Score: ${p.score})`, p.x-15-camX, p.y-p.size/2-15-camY);
   }
 }
 
