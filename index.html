@@ -1,70 +1,119 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Top-Down RPG</title>
-  <style>
-    body { margin: 0; overflow: hidden; background: #1a1a1a; }
-    canvas { display: block; background: #3a3a3a; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Top-Down RPG Prototype</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #1a1a1a; font-family: sans-serif; color: white; }
+  canvas { display: block; background: #3a3a3a; }
+  #chat {
+    position: absolute; bottom: 10px; left: 10px; width: 300px; 
+    max-height: 200px; overflow-y: auto; background: rgba(0,0,0,0.6); padding: 5px; border-radius: 5px;
+  }
+  #chat input {
+    width: 100%; box-sizing: border-box; border: none; padding: 5px; border-radius: 3px;
+  }
+  .message { margin: 2px 0; }
+</style>
 </head>
 <body>
-  <canvas id="gameCanvas" width="800" height="600"></canvas>
+<canvas id="gameCanvas" width="800" height="600"></canvas>
 
-  <script>
-    const canvas = document.getElementById("gameCanvas");
-    const ctx = canvas.getContext("2d");
+<div id="chat">
+  <div id="messages"></div>
+  <input id="chatInput" placeholder="Type a message and press Enter">
+</div>
 
-    const keys = {};
-    window.addEventListener("keydown", e => keys[e.key] = true);
-    window.addEventListener("keyup", e => keys[e.key] = false);
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
 
-    // Player setup
-    const player = { x: 400, y: 300, size: 30, speed: 3 };
+const keys = {};
+window.addEventListener("keydown", e => keys[e.key] = true);
+window.addEventListener("keyup", e => keys[e.key] = false);
 
-    // World setup
-    const world = { width: 2000, height: 2000 };
+// Simulated players (local)
+const players = [
+  { id: 1, x: 400, y: 300, color: "#00ff88", size: 30 },
+  { id: 2, x: 500, y: 350, color: "#ff5555", size: 30 },
+  { id: 3, x: 450, y: 250, color: "#5555ff", size: 30 }
+];
 
-    function update() {
-      if (keys["w"]) player.y -= player.speed;
-      if (keys["s"]) player.y += player.speed;
-      if (keys["a"]) player.x -= player.speed;
-      if (keys["d"]) player.x += player.speed;
+const localPlayer = players[0];
+const world = { width: 2000, height: 2000 };
+const speed = 3;
 
-      // Clamp to world bounds
-      player.x = Math.max(0, Math.min(world.width, player.x));
-      player.y = Math.max(0, Math.min(world.height, player.y));
+// Chat
+const chatInput = document.getElementById("chatInput");
+const messagesDiv = document.getElementById("messages");
+chatInput.addEventListener("keydown", e => {
+  if(e.key === "Enter" && chatInput.value.trim() !== "") {
+    addMessage(`Player ${localPlayer.id}: ${chatInput.value}`);
+    chatInput.value = "";
+  }
+});
+
+function addMessage(msg) {
+  const div = document.createElement("div");
+  div.className = "message";
+  div.textContent = msg;
+  messagesDiv.appendChild(div);
+  messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
+
+// Game update
+function update() {
+  // Move local player
+  if(keys["w"]) localPlayer.y -= speed;
+  if(keys["s"]) localPlayer.y += speed;
+  if(keys["a"]) localPlayer.x -= speed;
+  if(keys["d"]) localPlayer.x += speed;
+
+  // Clamp
+  localPlayer.x = Math.max(0, Math.min(world.width, localPlayer.x));
+  localPlayer.y = Math.max(0, Math.min(world.height, localPlayer.y));
+
+  // Simulate other players moving randomly
+  for(let i=1; i<players.length; i++) {
+    players[i].x += Math.random()*2-1;
+    players[i].y += Math.random()*2-1;
+    players[i].x = Math.max(0, Math.min(world.width, players[i].x));
+    players[i].y = Math.max(0, Math.min(world.height, players[i].y));
+  }
+}
+
+// Draw
+function draw() {
+  const camX = localPlayer.x - canvas.width/2;
+  const camY = localPlayer.y - canvas.height/2;
+
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // Grid background
+  ctx.fillStyle = "#2e2e2e";
+  for(let x=0;x<world.width;x+=100){
+    for(let y=0;y<world.height;y+=100){
+      ctx.fillRect(x-camX, y-camY, 90, 90);
     }
+  }
 
-    function draw() {
-      // Center camera on player
-      const camX = player.x - canvas.width / 2;
-      const camY = player.y - canvas.height / 2;
+  // Draw all players
+  for(const p of players){
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.size/2 - camX, p.y - p.size/2 - camY, p.size, p.size);
+  }
+}
 
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+function gameLoop() {
+  update();
+  draw();
+  requestAnimationFrame(gameLoop);
+}
 
-      // Draw background grid
-      ctx.fillStyle = "#2e2e2e";
-      for (let x = 0; x < world.width; x += 100) {
-        for (let y = 0; y < world.height; y += 100) {
-          ctx.fillRect(x - camX, y - camY, 90, 90);
-        }
-      }
-
-      // Draw player
-      ctx.fillStyle = "#00ff88";
-      ctx.fillRect(player.x - player.size / 2 - camX, player.y - player.size / 2 - camY, player.size, player.size);
-    }
-
-    function gameLoop() {
-      update();
-      draw();
-      requestAnimationFrame(gameLoop);
-    }
-
-    gameLoop();
-  </script>
+gameLoop();
+</script>
 </body>
 </html>
+
 
