@@ -1,1 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Top-Down RPG</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #1a1a1a; }
+    canvas { display: block; background: #3a3a3a; }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const keys = {};
+    window.addEventListener("keydown", e => keys[e.key] = true);
+    window.addEventListener("keyup", e => keys[e.key] = false);
+
+    // Player setup
+    const player = { x: 400, y: 300, size: 30, speed: 3 };
+
+    // World setup
+    const world = { width: 2000, height: 2000 };
+
+    function update() {
+      if (keys["w"]) player.y -= player.speed;
+      if (keys["s"]) player.y += player.speed;
+      if (keys["a"]) player.x -= player.speed;
+      if (keys["d"]) player.x += player.speed;
+
+      // Clamp to world bounds
+      player.x = Math.max(0, Math.min(world.width, player.x));
+      player.y = Math.max(0, Math.min(world.height, player.y));
+    }
+
+    function draw() {
+      // Center camera on player
+      const camX = player.x - canvas.width / 2;
+      const camY = player.y - canvas.height / 2;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw background grid
+      ctx.fillStyle = "#2e2e2e";
+      for (let x = 0; x < world.width; x += 100) {
+        for (let y = 0; y < world.height; y += 100) {
+          ctx.fillRect(x - camX, y - camY, 90, 90);
+        }
+      }
+
+      // Draw player
+      ctx.fillStyle = "#00ff88";
+      ctx.fillRect(player.x - player.size / 2 - camX, player.y - player.size / 2 - camY, player.size, player.size);
+    }
+
+    function gameLoop() {
+      update();
+      draw();
+      requestAnimationFrame(gameLoop);
+    }
+
+    gameLoop();
+  </script>
+</body>
+</html>
 
