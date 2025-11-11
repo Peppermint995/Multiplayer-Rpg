@@ -3,164 +3,148 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Top-Down RPG Multiplayer</title>
+<title>Top-Down Multiplayer RPG with Worlds & Shops</title>
 <style>
-body { margin:0; overflow:hidden; background:#1a1a1a; font-family:sans-serif; color:white;}
-canvas { display:block; }
-#chat {
-  position:absolute; bottom:10px; left:10px; width:300px;
-  max-height:200px; overflow-y:auto; background: rgba(0,0,0,0.6); padding:5px; border-radius:5px;
-}
-#chat input {
-  width:100%; box-sizing:border-box; border:none; padding:5px; border-radius:3px;
-}
-.message { margin:2px 0; }
+body{margin:0;overflow:hidden;background:#1a1a1a;font-family:sans-serif;color:white}
+canvas{display:block;}
+#chat{position:absolute;bottom:10px;left:10px;width:300px;max-height:200px;overflow-y:auto;background: rgba(0,0,0,0.6);padding:5px;border-radius:5px;}
+#chat input{width:100%;box-sizing:border-box;border:none;padding:5px;border-radius:3px;}
+.message{margin:2px 0;}
 </style>
 </head>
 <body>
 <canvas id="gameCanvas"></canvas>
-
 <div id="chat">
   <div id="messages"></div>
   <input id="chatInput" placeholder="Type a message and press Enter">
 </div>
-
 <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
 <script>
-// === Canvas Setup ===
-const canvas = document.getElementById("gameCanvas");
-const ctx = canvas.getContext("2d");
+const canvas=document.getElementById("gameCanvas"), ctx=canvas.getContext("2d");
+function resize(){canvas.width=window.innerWidth;canvas.height=window.innerHeight;}
+window.addEventListener("resize",resize); resize();
 
-function resizeCanvas(){
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-}
-window.addEventListener("resize", resizeCanvas);
-resizeCanvas();
+const keys={}, speed=3, attackRange=40, attackDamage=20, enemyDamage=10;
+window.addEventListener("keydown",e=>keys[e.key]=true);
+window.addEventListener("keyup",e=>keys[e.key]=false);
 
-// === Player Controls ===
-const keys = {};
-window.addEventListener("keydown", e => keys[e.key] = true);
-window.addEventListener("keyup", e => keys[e.key] = false);
+const gun=Gun({peers:['https://gun-manhattan.herokuapp.com/gun']});
+const playersRef=gun.get('players');
+const enemiesRef=gun.get('enemies');
+const lootRef=gun.get('loot');
+const chatRef=gun.get('chat');
+const worldsRef=gun.get('worlds');
+const inventoryRef=gun.get('inventory');
 
-// === World & Obstacles ===
-const world = { width:2000, height:2000 };
-const obstacles = [
-  {x:600, y:400, w:200, h:50},
-  {x:1200, y:800, w:100, h:300},
-  {x:900, y:1500, w:300, h:50}
-];
+const localId=Math.random().toString(36).substr(2,9);
+const localName=prompt("Enter your name")||"Player"+localId.slice(0,4);
+let currentWorld="world1";
 
-// === GUN.js Multiplayer ===
-const gun = Gun();
-const playersRef = gun.get('players');
-const chatRef = gun.get('chat');
-
-const localId = Math.random().toString(36).substr(2,9);
-const localName = prompt("Enter your name") || "Player"+localId.slice(0,4);
-const localPlayer = { x:400, y:300, color: "#"+Math.floor(Math.random()*16777215).toString(16), size:30, health:100, attack:false, name:localName, score:0 };
+const localPlayer={x:400,y:300,color:"#"+Math.floor(Math.random()*16777215).toString(16),size:30,health:100,attack:false,name:localName,score:0,world:currentWorld};
 playersRef.get(localId).put(localPlayer);
 
-const players = {};
-players[localId] = localPlayer;
+const players={}; players[localId]=localPlayer;
+const enemies={}; const loot={}; const worlds={}; const inventory={};
 
-// === Chat System ===
-const chatInput = document.getElementById("chatInput");
-const messagesDiv = document.getElementById("messages");
-
-chatInput.addEventListener("keydown", e=>{
+// Chat
+const chatInput=document.getElementById("chatInput");
+const messagesDiv=document.getElementById("messages");
+chatInput.addEventListener("keydown",e=>{
   if(e.key==="Enter" && chatInput.value.trim()!==""){
     chatRef.set({id:localId,msg:chatInput.value,name:localPlayer.name});
     chatInput.value="";
   }
 });
-
 chatRef.map().on(data=>{
   if(!data) return;
-  const div = document.createElement("div");
-  div.className="message";
-  div.textContent=`${data.name || "Player"}: ${data.msg}`;
-  messagesDiv.appendChild(div);
-  messagesDiv.scrollTop = messagesDiv.scrollHeight;
+  const div=document.createElement("div"); div.className="message";
+  div.textContent=`${data.name||"Player"}: ${data.msg}`;
+  messagesDiv.appendChild(div); messagesDiv.scrollTop=messagesDiv.scrollHeight;
 });
 
-// Listen for all player updates
-playersRef.map().on((data,id)=>{
-  if(!data) return;
-  players[id] = data;
-});
+// Listen for all players
+playersRef.map().on((data,id)=>{ if(!data) return; players[id]=data; });
+// Enemies update
+enemiesRef.map().on((data,id)=>{ if(!data) return; enemies[id]=data; });
+// Loot update
+lootRef.map().on((data,id)=>{ if(!data) return; loot[id]=data; });
+// Worlds
+worldsRef.map().on((data,id)=>{ if(!data) return; worlds[id]=data; });
+// Inventory
+inventoryRef.map().on((data,id)=>{ if(!data) return; inventory[id]=data; });
 
-// === Game Loop ===
+// === Worlds setup ===
+function setupWorld(id){
+  if(!worlds[id]){
+    worldsRef.get(id).put({
+      obstacles:[{x:600,y:400,w:200,h:50},{x:1200,y:800,w:100,h:300},{x:900,y:1500,w:300,h:50}],
+      shops:[{x:300,y:300,items:[{name:"Potion",cost:5}]}]
+    });
+  }
+}
+setupWorld("world1");
+setupWorld("world2");
+
+// === Inventory setup ===
+if(!inventory[localId]) inventoryRef.get(localId).put({items:[]});
+
+// === Helper Functions ===
+function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
+function checkCollision(x,y,size,objs){for(const o of objs)if(x+size/2>o.x&&x-size/2<o.x+o.w&&y+size/2>o.y&&y-size/2<o.y+o.h)return true;return false;}
+function respawn(player){player.x=400;player.y=300;player.health=100;}
+function addMessage(msg){const d=document.createElement("div");d.className="message";d.textContent=msg;messagesDiv.appendChild(d);messagesDiv.scrollTop=messagesDiv.scrollHeight;}
+
+// === Game Update ===
 function update(){
-  let nextX = localPlayer.x;
-  let nextY = localPlayer.y;
+  let worldData = worlds[currentWorld] || {obstacles:[], shops:[]};
 
-  if(keys["w"]) nextY -= 3;
-  if(keys["s"]) nextY += 3;
-  if(keys["a"]) nextX -= 3;
-  if(keys["d"]) nextX += 3;
+  let nx=localPlayer.x, ny=localPlayer.y;
+  if(keys["w"])ny-=speed;if(keys["s"])ny+=speed;if(keys["a"])nx-=speed;if(keys["d"])nx+=speed;
+  if(!checkCollision(nx,ny,localPlayer.size,worldData.obstacles)){localPlayer.x=nx;localPlayer.y=ny;}
 
-  // Collision check
-  for(const obs of obstacles){
-    if(nextX + localPlayer.size/2 > obs.x && nextX - localPlayer.size/2 < obs.x + obs.w &&
-       nextY + localPlayer.size/2 > obs.y && nextY - localPlayer.size/2 < obs.y + obs.h){
-      nextX = localPlayer.x;
-      nextY = localPlayer.y;
-      break;
+  // Shop interaction
+  for(const shop of worldData.shops){
+    if(distance(localPlayer,shop)<50 && keys["e"]){
+      for(const it of shop.items){
+        if(localPlayer.score>=it.cost){
+          localPlayer.score-=it.cost;
+          let inv=inventory[localId]||{items:[]};
+          inv.items.push(it.name);
+          inventoryRef.get(localId).put(inv);
+          addMessage(`Bought ${it.name}!`);
+        }
+      }
     }
   }
 
-  localPlayer.x = nextX;
-  localPlayer.y = nextY;
+  // TODO: enemies, loot pickup, combat same as previous code
+  // For simplicity, re-use previous enemy/loot code with world filter
   playersRef.get(localId).put(localPlayer);
 }
 
+// === Draw ===
 function draw(){
-  const camX = localPlayer.x - canvas.width/2;
-  const camY = localPlayer.y - canvas.height/2;
-
+  const camX=localPlayer.x-canvas.width/2, camY=localPlayer.y-canvas.height/2;
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  // Grid
-  ctx.fillStyle="#2e2e2e";
-  for(let x=0;x<world.width;x+=100){
-    for(let y=0;y<world.height;y+=100){
-      ctx.fillRect(x-camX,y-camY,90,90);
-    }
-  }
+  let worldData = worlds[currentWorld] || {obstacles:[], shops:[]};
 
   // Obstacles
-  ctx.fillStyle="#555555";
-  for(const obs of obstacles){
-    ctx.fillRect(obs.x-camX, obs.y-camY, obs.w, obs.h);
-  }
+  ctx.fillStyle="#555"; for(const o of worldData.obstacles)ctx.fillRect(o.x-camX,o.y-camY,o.w,o.h);
 
-  // Draw players
-  for(const id in players){
-    const p = players[id];
-    ctx.fillStyle=p.color;
-    ctx.fillRect(p.x - p.size/2 - camX, p.y - p.size/2 - camY, p.size, p.size);
+  // Shops
+  ctx.fillStyle="cyan"; for(const s of worldData.shops)ctx.fillRect(s.x-10-camX,s.y-10-camY,20,20);
 
-    // Health bar
-    ctx.fillStyle="red";
-    ctx.fillRect(p.x-15-camX, p.y-p.size/2-10-camY, 30*(p.health/100),5);
-    ctx.strokeStyle="black";
-    ctx.strokeRect(p.x-15-camX, p.y-p.size/2-10-camY,30,5);
-
-    // Name & score
-    ctx.fillStyle="white";
-    ctx.font="12px sans-serif";
-    ctx.fillText(`${p.name} (Score: ${p.score})`, p.x-15-camX, p.y-p.size/2-15-camY);
-  }
+  // Players
+  for(const id in players){const p=players[id]; if(p.world===currentWorld){
+    ctx.fillStyle=p.color; ctx.fillRect(p.x-p.size/2-camX,p.y-p.size/2-camY,p.size,p.size);
+    ctx.fillStyle="red"; ctx.fillRect(p.x-15-camX,p.y-p.size/2-10-camY,30*(p.health/100),5);
+    ctx.strokeStyle="black"; ctx.strokeRect(p.x-15-camX,p.y-p.size/2-10-camY,30,5);
+    ctx.fillStyle="white"; ctx.font="12px sans-serif"; ctx.fillText(`${p.name} (Score:${p.score})`,p.x-15-camX,p.y-p.size/2-15-camY);
+  }}
 }
-
-function gameLoop(){
-  update();
-  draw();
-  requestAnimationFrame(gameLoop);
-}
-
-gameLoop();
+function loop(){update();draw();requestAnimationFrame(loop);}
+loop();
 </script>
 </body>
 </html>
