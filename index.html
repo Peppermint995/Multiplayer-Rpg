@@ -40,7 +40,8 @@ const chatRef=gun.get('chat');
 
 const localId=Math.random().toString(36).substr(2,9);
 const localName=prompt("Enter your name")||"Player"+localId.slice(0,4);
-const localPlayer={x:400,y:300,size:30,color:"#"+Math.floor(Math.random()*16777215).toString(16),health:100,score:0,currentLocation:{type:"world",id:"world1"}};
+// <<< FIX 1: Added the 'name: localName' property
+const localPlayer={name:localName, x:400,y:300,size:30,color:"#"+Math.floor(Math.random()*16777215).toString(16),health:100,score:0,currentLocation:{type:"world",id:"world1"}};
 playersRef.get(localId).put(localPlayer);
 
 const players={}, enemies={}, loot={}, inventory={}, worlds={}, dungeons={};
@@ -50,6 +51,7 @@ const chatInput=document.getElementById("chatInput");
 const messagesDiv=document.getElementById("messages");
 chatInput.addEventListener("keydown",e=>{
   if(e.key==="Enter" && chatInput.value.trim()!==""){
+    // localPlayer.name will now be correct thanks to FIX 1
     chatRef.set({id:localId,msg:chatInput.value,name:localPlayer.name});
     chatInput.value="";
   }
@@ -121,8 +123,16 @@ function draw(){
   // Draw world/dungeon obstacles
   let loc = localPlayer.currentLocation;
   let obs = [];
-  if(loc.type==="world"){ let w = worlds[loc.id]; if(w) obs=w.obstacles||[]; } 
-  else if(loc.type==="dungeon"){ let d = dungeons[loc.id]; if(d) obs=d.obstacles||[]; }
+  // <<< FIX 3: Create an array to hold enemies from dungeon data
+  let dungeonEnemies = [];
+  if(loc.type==="world"){ let w = worlds[loc.id]; if(w) obs=w.obstacles||[]; }  
+  else if(loc.type==="dungeon"){ 
+    let d = dungeons[loc.id]; 
+    if(d) {
+      obs=d.obstacles||[]; 
+      dungeonEnemies = d.enemies||[]; // <<< FIX 3: Get enemies from dungeon data
+    }
+  }
   ctx.fillStyle="#555"; for(const o of obs)ctx.fillRect(o.x-camX,o.y-camY,o.w,o.h);
 
   // Draw shops/dungeon entrance
@@ -131,13 +141,28 @@ function draw(){
     if(w.dungeonEntrance) ctx.fillStyle="purple", ctx.fillRect(w.dungeonEntrance.x-10-camX,w.dungeonEntrance.y-10-camY,20,20);
   }}
 
+  // <<< FIX 3: Draw the enemies we found in the dungeon data
+  ctx.fillStyle="red";
+  for(const e of dungeonEnemies){
+    ctx.fillRect(e.x-e.size/2-camX, e.y-e.size/2-camY, e.size, e.size);
+    // Draw simple health bar
+    ctx.fillStyle="#f00"; ctx.fillRect(e.x-e.size/2-camX, e.y-e.size/2-10-camY, e.size*(e.health/50), 3);
+    ctx.strokeStyle="#000"; ctx.strokeRect(e.x-e.size/2-camX, e.y-e.size/2-10-camY, e.size, 3);
+  }
+
   // Players
-  for(const id in players){const p=players[id]; if(JSON.stringify(p.currentLocation)===JSON.stringify(localPlayer.currentLocation)){
-    ctx.fillStyle=p.color; ctx.fillRect(p.x-p.size/2-camX,p.y-p.size/2-camY,p.size,p.size);
-    ctx.fillStyle="red"; ctx.fillRect(p.x-15-camX,p.y-p.size/2-10-camY,30*(p.health/100),5);
-    ctx.strokeStyle="black"; ctx.strokeRect(p.x-15-camX,p.y-p.size/2-10-camY,30,5);
-    ctx.fillStyle="white"; ctx.font="12px sans-serif"; ctx.fillText(`${p.name} (Score:${p.score})`,p.x-15-camX,p.y-p.size/2-15-camY);
-  }}
+  for(const id in players){
+    const p=players[id];
+    // <<< FIX 2: Changed unreliable JSON.stringify to a robust property check
+    if(p.currentLocation && p.currentLocation.type === localPlayer.currentLocation.type && p.currentLocation.id === localPlayer.currentLocation.id){
+      ctx.fillStyle=p.color; ctx.fillRect(p.x-p.size/2-camX,p.y-p.size/2-camY,p.size,p.size);
+      ctx.fillStyle="red"; ctx.fillRect(p.x-15-camX,p.y-p.size/2-10-camY,30*(p.health/100),5);
+      ctx.strokeStyle="black"; ctx.strokeRect(p.x-15-camX,p.y-p.size/2-10-camY,30,5);
+      ctx.fillStyle="white"; ctx.font="12px sans-serif"; 
+      // This will now display correctly thanks to FIX 1
+      ctx.fillText(`${p.name} (Score:${p.score})`,p.x-15-camX,p.y-p.size/2-15-camY);
+    }
+  }
 }
 
 function loop(){update();draw();requestAnimationFrame(loop);}
