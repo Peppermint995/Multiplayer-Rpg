@@ -1,172 +1,772 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>RPG Multiplayer with Dungeons</title>
-<style>
-body{margin:0;overflow:hidden;background:#1a1a1a;font-family:sans-serif;color:white}
-canvas{display:block;}
-#chat{position:absolute;bottom:10px;left:10px;width:300px;max-height:200px;overflow-y:auto;background: rgba(0,0,0,0.6);padding:5px;border-radius:5px;}
-#chat input{width:100%;box-sizing:border-box;border:none;padding:5px;border-radius:3px;}
-.message{margin:2px 0;}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dungeon Coin Collector RPG</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Added Tone.js for audio -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+    <style>
+        :root {
+            --player-size: 40px;
+            --coin-size: 20px;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a1a1a;
+            color: #f0f0f0;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        #game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            height: 100%;
+        }
+
+        #game-area {
+            width: 100%;
+            max-width: 1000px;
+            height: 70vh;
+            background-color: #2a2a2a;
+            border: 2px solid #444;
+            border-radius: 12px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+        }
+
+        .player {
+            width: var(--player-size);
+            height: var(--player-size);
+            border-radius: 50%;
+            position: absolute;
+            /* Removed transition for smoother game loop updates */
+            /* transition: transform 0.1s linear; */ 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 10px;
+            font-weight: bold;
+            color: white;
+            text-shadow: 1px 1px 2px black;
+            box-sizing: border-box;
+            border: 3px solid white;
+        }
+
+        .coin {
+            width: var(--coin-size);
+            height: var(--coin-size);
+            background-color: #ffd700;
+            border-radius: 50%;
+            position: absolute;
+            box-shadow: 0 0 10px #ffd700;
+            border: 2px solid #fff;
+        }
+        
+        /* Added particle style */
+        .particle {
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            background-color: #ffd700;
+            border-radius: 50%;
+            pointer-events: none;
+            transition: transform 0.8s cubic-bezier(0.1, 0.8, 0.7, 1), opacity 0.8s linear;
+            box-shadow: 0 0 5px #ffd700;
+        }
+
+        #scoreboard {
+            width: 100%;
+            max-width: 1000px;
+            margin-top: 16px;
+            background-color: #2a2a2a;
+            border-radius: 8px;
+            padding: 12px;
+            height: 20vh;
+            overflow-y: auto;
+        }
+
+        #scoreboard h2 {
+            text-align: center;
+            font-weight: bold;
+            font-size: 1.25rem;
+            margin-bottom: 8px;
+            border-bottom: 2px solid #444;
+            padding-bottom: 4px;
+        }
+
+        .score-entry {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+        
+        .score-entry:nth-child(even) {
+            background-color: #333;
+        }
+        
+        .score-name {
+            font-size: 0.9rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 70%;
+        }
+        
+        .score-coins {
+            font-weight: bold;
+            color: #ffd700;
+        }
+
+        #user-info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.5);
+            padding: 5px 10px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+        }
+        
+        /* Added audio button style */
+        #audio-toggle {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: #f44336;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            z-index: 100;
+        }
+
+        #audio-toggle.playing {
+            background-color: #4CAF50;
+        }
+
+        /* Custom message box for alerts */
+        #message-box {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #4CAF50;
+            color: white;
+            padding: 16px;
+            border-radius: 8px;
+            z-index: 1000;
+            display: none;
+            opacity: 0;
+            transition: opacity 0.5s;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+
+    </style>
 </head>
 <body>
-<canvas id="gameCanvas"></canvas>
-<div id="chat">
-  <div id="messages"></div>
-  <input id="chatInput" placeholder="Type a message and press Enter">
-</div>
-<script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
-<script>
-const canvas=document.getElementById("gameCanvas"), ctx=canvas.getContext("2d");
-function resize(){canvas.width=window.innerWidth; canvas.height=window.innerHeight;}
-window.addEventListener("resize",resize); resize();
 
-const keys={}, speed=3;
-window.addEventListener("keydown",e=>keys[e.key]=true);
-window.addEventListener("keyup",e=>keys[e.key]=false);
+    <div id="game-container">
+        <div id="user-info">Your User ID: <span id="user-id-display">Loading...</span></div>
+        <!-- Added audio toggle button -->
+        <button id="audio-toggle">Enable Audio</button>
+        
+        <div id="game-area">
+            <!-- Players and coins will be added here by JavaScript -->
+        </div>
 
-// Gun setup
-const gun=Gun({peers:['https://gun-manhattan.herokuapp.com/gun']});
-const playersRef=gun.get('players');
-const worldsRef=gun.get('worlds');
-const dungeonsRef=gun.get('dungeons');
-const enemiesRef=gun.get('enemies');
-const lootRef=gun.get('loot');
-const inventoryRef=gun.get('inventory');
-const chatRef=gun.get('chat');
+        <div id="scoreboard">
+            <h2>Leaderboard</h2>
+            <div id="scoreboard-list">
+                <!-- Score entries will be added here by JavaScript -->
+            </div>
+        </div>
+    </div>
+    
+    <div id="message-box"></div>
 
-const localId=Math.random().toString(36).substr(2,9);
-const localName=prompt("Enter your name")||"Player"+localId.slice(0,4);
-// <<< FIX 1: Added the 'name: localName' property
-const localPlayer={name:localName, x:400,y:300,size:30,color:"#"+Math.floor(Math.random()*16777215).toString(16),health:100,score:0,currentLocation:{type:"world",id:"world1"}};
-playersRef.get(localId).put(localPlayer);
+    <script type="module">
+        // Import Firebase modules
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            signInAnonymously, 
+            signInWithCustomToken, 
+            onAuthStateChanged 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            doc, 
+            setDoc, 
+            onSnapshot, 
+            collection, 
+            updateDoc, 
+            increment, 
+            deleteDoc, 
+            addDoc,
+            serverTimestamp,
+            query,
+            limit,
+            getDocs,
+            Timestamp
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-const players={}, enemies={}, loot={}, inventory={}, worlds={}, dungeons={};
+        // --- Firebase Config and App ID ---
+        // These variables are provided by the environment.
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'dungeon-rpg-default';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-// Chat
-const chatInput=document.getElementById("chatInput");
-const messagesDiv=document.getElementById("messages");
-chatInput.addEventListener("keydown",e=>{
-  if(e.key==="Enter" && chatInput.value.trim()!==""){
-    // localPlayer.name will now be correct thanks to FIX 1
-    chatRef.set({id:localId,msg:chatInput.value,name:localPlayer.name});
-    chatInput.value="";
-  }
-});
-chatRef.map().on(data=>{
-  if(!data) return;
-  const div=document.createElement("div"); div.className="message";
-  div.textContent=`${data.name||"Player"}: ${data.msg}`;
-  messagesDiv.appendChild(div); messagesDiv.scrollTop=messagesDiv.scrollHeight;
-});
+        let db, auth, userId;
+        let localPlayer = { x: 50, y: 50, coins: 0, id: null, lastSeen: null };
+        let localPlayerElement = null;
+        let gameArea, scoreboardList;
+        let playersCollectionRef, lootCollectionRef;
+        
+        const players = new Map(); // Stores player data
+        const playerElements = new Map(); // Stores player DOM elements
+        const loot = new Map(); // Stores loot data
+        const lootElements = new Map(); // Stores loot DOM elements
+        
+        // Added key state tracker for smooth movement
+        const keysPressed = {};
 
-// Listen for multiplayer updates
-playersRef.map().on((data,id)=>{ if(!data) return; players[id]=data; });
-enemiesRef.map().on((data,id)=>{ if(!data) return; enemies[id]=data; });
-lootRef.map().on((data,id)=>{ if(!data) return; loot[id]=data; });
-worldsRef.map().on((data,id)=>{ if(!data) return; worlds[id]=data; });
-dungeonsRef.map().on((data,id)=>{ if(!data) return; dungeons[id]=data; });
-inventoryRef.map().on((data,id)=>{ if(!data) return; inventory[id]=data; });
+        const PLAYER_SIZE = 40;
+        const COIN_SIZE = 20;
+        const PLAYER_SPEED = 5; // Reduced speed for smoother pixel-by-pixel movement
+        const MAX_COINS = 5; // Max coins on screen at once
 
-// Helper
-function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
-function checkCollision(x,y,size,objs){for(const o of objs)if(x+size/2>o.x&&x-size/2<o.x+o.w&&y+size/2>o.y&&y-size/2<o.y+o.h)return true;return false;}
-function addMessage(msg){const d=document.createElement("div");d.className="message";d.textContent=msg;messagesDiv.appendChild(d);messagesDiv.scrollTop=messagesDiv.scrollHeight;}
-function respawn(p){p.x=400;p.y=300;p.health=100;}
+        // Debounce function to limit Firestore writes
+        function debounce(func, wait) {
+            let timeout;
+            return function(...args) {
+                const context = this;
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(context, args), wait);
+            };
+        }
 
-// === World/Dungeon Setup
-function setupWorld(id){
-  if(!worlds[id]){
-    worldsRef.get(id).put({obstacles:[{x:500,y:500,w:200,h:50}],shops:[{x:300,y:300,items:[{name:"Potion",cost:5}]}],dungeonEntrance:{x:800,y:800,dungeonId:"dungeon1"}});
-  }
-}
-function setupDungeon(id){
-  if(!dungeons[id]){
-    dungeonsRef.get(id).put({obstacles:[{x:100,y:100,w:100,h:50}],enemies:[{x:200,y:200,size:25,health:50}],loot:[]});
-  }
-}
-setupWorld("world1"); setupDungeon("dungeon1");
+        // Send player position update to Firestore (debounced)
+        const updatePlayerPositionInFirestore = debounce((id) => {
+            if (!id) return;
+            const playerDocRef = doc(db, playersCollectionRef.path, id);
+            updateDoc(playerDocRef, { 
+                x: localPlayer.x, 
+                y: localPlayer.y,
+                lastSeen: serverTimestamp()
+            }).catch(handleError);
+        }, 100); // Update firestore max 10 times/sec
 
-// === Game Update ===
-function update(){
-  let loc = localPlayer.currentLocation;
-  let currentObstacles = [];
-  let shops = [];
-  if(loc.type==="world"){
-    const w = worlds[loc.id]; if(w){currentObstacles=w.obstacles||[]; shops=w.shops||[];}
-    // Enter dungeon
-    if(w && w.dungeonEntrance && distance(localPlayer,w.dungeonEntrance)<30 && keys["e"]){
-      localPlayer.currentLocation={type:"dungeon",id:w.dungeonEntrance.dungeonId};
-      localPlayer.x=100; localPlayer.y=100;
-      addMessage("Entered Dungeon!");
-    }
-  }else if(loc.type==="dungeon"){
-    const d = dungeons[loc.id]; if(d){currentObstacles=d.obstacles||[];}
-  }
+        // --- Audio Setup ---
+        let audioEnabled = false;
+        let coinSynth, musicLoop;
 
-  // Movement
-  let nx=localPlayer.x, ny=localPlayer.y;
-  if(keys["w"])ny-=speed;if(keys["s"])ny+=speed;if(keys["a"])nx-=speed;if(keys["d"])nx+=speed;
-  if(!checkCollision(nx,ny,localPlayer.size,currentObstacles)){localPlayer.x=nx; localPlayer.y=ny;}
+        function setupAudio() {
+            // Sound effect for collecting a coin
+            coinSynth = new Tone.Synth({
+                oscillator: { type: 'sine' },
+                envelope: { attack: 0.01, decay: 0.1, sustain: 0.05, release: 0.2 }
+            }).toDestination();
 
-  playersRef.get(localId).put(localPlayer);
-}
+            // Simple background music loop
+            const musicSynth = new Tone.AMSynth({
+                envelope: { attack: 0.1, decay: 0.2, sustain: 0.5, release: 0.8 }
+            }).toDestination();
+            musicSynth.volume.value = -15; // Make music quieter
 
-// === Draw ===
-function draw(){
-  const camX=localPlayer.x-canvas.width/2, camY=localPlayer.y-canvas.height/2;
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+            musicLoop = new Tone.Sequence((time, note) => {
+                musicSynth.triggerAttackRelease(note, '4n', time);
+            }, ['C3', 'E3', 'G3', 'B3'], '2n').start(0);
+            
+            Tone.Transport.bpm.value = 100;
+        }
 
-  // Draw world/dungeon obstacles
-  let loc = localPlayer.currentLocation;
-  let obs = [];
-  // <<< FIX 3: Create an array to hold enemies from dungeon data
-  let dungeonEnemies = [];
-  if(loc.type==="world"){ let w = worlds[loc.id]; if(w) obs=w.obstacles||[]; }  
-  else if(loc.type==="dungeon"){ 
-    let d = dungeons[loc.id]; 
-    if(d) {
-      obs=d.obstacles||[]; 
-      dungeonEnemies = d.enemies||[]; // <<< FIX 3: Get enemies from dungeon data
-    }
-  }
-  ctx.fillStyle="#555"; for(const o of obs)ctx.fillRect(o.x-camX,o.y-camY,o.w,o.h);
+        window.onload = async () => {
+            gameArea = document.getElementById('game-area');
+            scoreboardList = document.getElementById('scoreboard-list');
 
-  // Draw shops/dungeon entrance
-  if(loc.type==="world"){ let w = worlds[loc.id]; if(w){
-    ctx.fillStyle="cyan"; for(const s of w.shops)ctx.fillRect(s.x-10-camX,s.y-10-camY,20,20);
-    if(w.dungeonEntrance) ctx.fillStyle="purple", ctx.fillRect(w.dungeonEntrance.x-10-camX,w.dungeonEntrance.y-10-camY,20,20);
-  }}
+            // Audio button event listener
+            const audioButton = document.getElementById('audio-toggle');
+            audioButton.addEventListener('click', async () => {
+                if (audioEnabled) {
+                    Tone.Transport.stop();
+                    audioButton.textContent = 'Enable Audio';
+                    audioButton.classList.remove('playing');
+                } else {
+                    await Tone.start();
+                    setupAudio();
+                    Tone.Transport.start();
+                    audioButton.textContent = 'Mute Audio';
+                    audioButton.classList.add('playing');
+                }
+                audioEnabled = !audioEnabled;
+            });
 
-  // <<< FIX 3: Draw the enemies we found in the dungeon data
-  ctx.fillStyle="red";
-  for(const e of dungeonEnemies){
-    ctx.fillRect(e.x-e.size/2-camX, e.y-e.size/2-camY, e.size, e.size);
-    // Draw simple health bar
-    ctx.fillStyle="#f00"; ctx.fillRect(e.x-e.size/2-camX, e.y-e.size/2-10-camY, e.size*(e.health/50), 3);
-    ctx.strokeStyle="#000"; ctx.strokeRect(e.x-e.size/2-camX, e.y-e.size/2-10-camY, e.size, 3);
-  }
 
-  // Players
-  for(const id in players){
-    const p=players[id];
-    // <<< FIX 2: Changed unreliable JSON.stringify to a robust property check
-    if(p.currentLocation && p.currentLocation.type === localPlayer.currentLocation.type && p.currentLocation.id === localPlayer.currentLocation.id){
-      ctx.fillStyle=p.color; ctx.fillRect(p.x-p.size/2-camX,p.y-p.size/2-camY,p.size,p.size);
-      ctx.fillStyle="red"; ctx.fillRect(p.x-15-camX,p.y-p.size/2-10-camY,30*(p.health/100),5);
-      ctx.strokeStyle="black"; ctx.strokeRect(p.x-15-camX,p.y-p.size/2-10-camY,30,5);
-      ctx.fillStyle="white"; ctx.font="12px sans-serif"; 
-      // This will now display correctly thanks to FIX 1
-      ctx.fillText(`${p.name} (Score:${p.score})`,p.x-15-camX,p.y-p.size/2-15-camY);
-    }
-  }
-}
+            if (!firebaseConfig.apiKey) {
+                handleError("Firebase config is missing. Multiplayer features will be disabled.");
+                document.getElementById('user-id-display').textContent = "Error";
+                return;
+            }
 
-function loop(){update();draw();requestAnimationFrame(loop);}
-loop();
-</script>
+            try {
+                // Initialize Firebase
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // Listen for authentication state
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        localPlayer.id = userId;
+                        document.getElementById('user-id-display').textContent = userId;
+                        
+                        // Define collection paths
+                        const playersPath = `/artifacts/${appId}/public/data/players`;
+                        const lootPath = `/artifacts/${appId}/public/data/loot`;
+                        
+                        playersCollectionRef = collection(db, playersPath);
+                        lootCollectionRef = collection(db, lootPath);
+
+                        await initGame(userId);
+                    } else {
+                        // No user, sign in
+                        signIn();
+                    }
+                });
+            } catch (e) {
+                handleError("Error initializing Firebase: " + e.message);
+            }
+        };
+
+        async function signIn() {
+            try {
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (e) {
+                handleError("Error signing in: " + e.message);
+            }
+        }
+
+        async function initGame(currentUserId) {
+            // Create or update this player's document
+            const playerDocRef = doc(db, playersCollectionRef.path, currentUserId);
+            const playerColor = generatePlayerColor(currentUserId);
+            
+            await setDoc(playerDocRef, {
+                id: currentUserId,
+                userId: currentUserId,
+                x: localPlayer.x,
+                y: localPlayer.y,
+                coins: localPlayer.coins,
+                color: playerColor,
+                lastSeen: serverTimestamp()
+            }, { merge: true });
+
+            // Create local player element
+            localPlayerElement = createPlayerElement(currentUserId, playerColor);
+            updatePlayerElementPosition(localPlayerElement, localPlayer.x, localPlayer.y);
+            playerElements.set(currentUserId, localPlayerElement);
+            
+            // Start listening for player movements (keydown and keyup)
+            document.addEventListener('keydown', (e) => {
+                if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                    keysPressed[e.key] = true;
+                }
+            });
+            document.addEventListener('keyup', (e) => {
+                if (keysPressed.hasOwnProperty(e.key)) {
+                    keysPressed[e.key] = false;
+                }
+            });
+
+            // Listen for all players
+            onSnapshot(playersCollectionRef, (snapshot) => {
+                const activePlayerIds = new Set();
+                snapshot.docs.forEach(doc => {
+                    const playerData = doc.data();
+                    activePlayerIds.add(playerData.id);
+
+                    // Skip updating local player's position from Firestore to avoid jitter
+                    if (playerData.id === localPlayer.id) {
+                        localPlayer.coins = playerData.coins; // Update local coin count
+                        players.set(playerData.id, playerData); // Update local data
+                        return; // Don't move local player based on remote
+                    }
+
+                    // Update or create other players
+                    players.set(playerData.id, playerData);
+                    if (!playerElements.has(playerData.id)) {
+                        const newPlayerEl = createPlayerElement(playerData.id, playerData.color);
+                        playerElements.set(playerData.id, newPlayerEl);
+                    }
+                    
+                    const playerEl = playerElements.get(playerData.id);
+                    updatePlayerElementPosition(playerEl, playerData.x, playerData.y);
+                });
+                
+                // Remove disconnected players
+                playerElements.forEach((el, id) => {
+                    if (!activePlayerIds.has(id) && id !== localPlayer.id) {
+                        el.remove();
+                        playerElements.delete(id);
+                        players.delete(id);
+                    }
+                });
+
+                updateScoreboard();
+            }, handleError);
+            
+            // Listen for loot
+            onSnapshot(lootCollectionRef, (snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    const coinId = change.doc.id;
+                    const coinData = change.doc.data();
+
+                    if (change.type === "added") {
+                        if (!lootElements.has(coinId)) {
+                            const coinEl = createCoinElement(coinId, coinData.x, coinData.y);
+                            lootElements.set(coinId, coinEl);
+                            loot.set(coinId, { id: coinId, ...coinData });
+                        }
+                    }
+                    if (change.type === "removed") {
+                        if (lootElements.has(coinId)) {
+                            lootElements.get(coinId).remove();
+                            lootElements.delete(coinId);
+                            loot.delete(coinId);
+                        }
+                    }
+                });
+            }, handleError);
+
+            // Check if we need to spawn initial coins
+            await checkAndSpawnCoins();
+            
+            // Start the game loop for collision detection
+            gameLoop();
+        }
+        
+        async function checkAndSpawnCoins() {
+            try {
+                const q = query(lootCollectionRef, limit(MAX_COINS));
+                const snapshot = await getDocs(q);
+                let currentCoinCount = snapshot.size;
+                
+                while(currentCoinCount < MAX_COINS) {
+                    await spawnCoin();
+                    currentCoinCount++;
+                }
+            } catch (e) {
+                handleError("Error spawning initial coins: " + e.message);
+            }
+        }
+
+        function createPlayerElement(id, color) {
+            const el = document.createElement('div');
+            el.className = 'player';
+            el.dataset.id = id;
+            el.style.backgroundColor = color;
+            el.textContent = id.substring(0, 5); // Show first 5 chars of ID
+            gameArea.appendChild(el);
+            return el;
+        }
+        
+        function createCoinElement(id, x, y) {
+            const el = document.createElement('div');
+            el.className = 'coin';
+            el.dataset.id = id;
+            el.style.transform = `translate(${x}px, ${y}px)`;
+            gameArea.appendChild(el);
+            return el;
+        }
+
+        function updatePlayerElementPosition(element, x, y) {
+            element.style.transform = `translate(${x}px, ${y}px)`;
+        }
+
+        // Removed handleKeyPress function, logic is now in gameLoop
+        
+        // This new function handles player movement based on key state
+        function updateLocalPlayerPosition() {
+            if (!localPlayerElement) return;
+
+            let newX = localPlayer.x;
+            let newY = localPlayer.y;
+            let moved = false;
+
+            if (keysPressed['ArrowUp']) {
+                newY -= PLAYER_SPEED;
+                moved = true;
+            }
+            if (keysPressed['ArrowDown']) {
+                newY += PLAYER_SPEED;
+                moved = true;
+            }
+            if (keysPressed['ArrowLeft']) {
+                newX -= PLAYER_SPEED;
+                moved = true;
+            }
+            if (keysPressed['ArrowRight']) {
+                newX += PLAYER_SPEED;
+                moved = true;
+            }
+
+            if (!moved) return; // Don't update if not moving
+
+            // Prevent player from going out of bounds
+            const gameRect = gameArea.getBoundingClientRect();
+            localPlayer.x = Math.max(0, Math.min(gameRect.width - PLAYER_SIZE, newX));
+            localPlayer.y = Math.max(0, Math.min(gameRect.height - PLAYER_SIZE, newY));
+
+            // Update local element position immediately
+            updatePlayerElementPosition(localPlayerElement, localPlayer.x, localPlayer.y);
+            
+            // Send new position to Firestore (debounced)
+            updatePlayerPositionInFirestore(localPlayer.id);
+        }
+
+
+        function gameLoop() {
+            // Handle local player movement
+            updateLocalPlayerPosition();
+            
+            // Local player collision detection
+            checkLootCollision();
+            
+            // Clean up "stale" players who haven't been seen
+            cleanupStalePlayers();
+            
+            requestAnimationFrame(gameLoop);
+        }
+
+        function checkLootCollision() {
+            if (!localPlayerElement) return;
+
+            const playerRect = {
+                left: localPlayer.x,
+                top: localPlayer.y,
+                right: localPlayer.x + PLAYER_SIZE,
+                bottom: localPlayer.y + PLAYER_SIZE
+            };
+
+            loot.forEach((coin, coinId) => {
+                const coinRect = {
+                    left: coin.x,
+                    top: coin.y,
+                    right: coin.x + COIN_SIZE,
+                    bottom: coin.y + COIN_SIZE
+                };
+
+                // Simple AABB collision check
+                if (playerRect.left < coinRect.right &&
+                    playerRect.right > coinRect.left &&
+                    playerRect.top < coinRect.bottom &&
+                    playerRect.bottom > coinRect.top) {
+                    
+                    // Pass coin data to create particles at its location
+                    collectCoin(coinId, coin);
+                }
+            });
+        }
+        
+        async function collectCoin(coinId, coin) {
+            if (!loot.has(coinId)) return; // Already collected by someone else
+            
+            // Create particles at the coin's position
+            createParticles(coin.x, coin.y);
+
+            // Play sound effect
+            if (audioEnabled && coinSynth) {
+                coinSynth.triggerAttackRelease('C5', '16n');
+                coinSynth.triggerAttackRelease('E5', '16n', Tone.now() + 0.05);
+            }
+
+            // Optimistically remove from local map to prevent double-collection
+            const coinData = loot.get(coinId);
+            loot.delete(coinId);
+            
+            try {
+                // 1. Delete the coin doc
+                const coinDocRef = doc(db, lootCollectionRef.path, coinId);
+                await deleteDoc(coinDocRef);
+                
+                // 2. Increment player's coin count
+                const playerDocRef = doc(db, playersCollectionRef.path, localPlayer.id);
+                await updateDoc(playerDocRef, {
+                    coins: increment(1)
+                });
+                
+                // 3. Spawn a new coin
+                await spawnCoin();
+                
+                showMessage("Coin collected! +1");
+
+            } catch (e) {
+                // Put coin back if error
+                loot.set(coinId, coinData);
+                handleError("Error collecting coin: " + e.message);
+            }
+        }
+        
+        async function spawnCoin() {
+            try {
+                const gameRect = gameArea.getBoundingClientRect();
+                const x = Math.floor(Math.random() * (gameRect.width - COIN_SIZE));
+                const y = Math.floor(Math.random() * (gameRect.height - COIN_SIZE));
+                
+                await addDoc(lootCollectionRef, { x, y });
+            } catch (e) {
+                handleError("Error spawning coin: " + e.message);
+            }
+        }
+        
+        function updateScoreboard() {
+            scoreboardList.innerHTML = ''; // Clear list
+            
+            const allPlayers = Array.from(players.values());
+            
+            // Sort players by coins, descending
+            allPlayers.sort((a, b) => b.coins - a.coins);
+            
+            allPlayers.forEach(player => {
+                const entry = document.createElement('div');
+                entry.className = 'score-entry';
+                
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'score-name';
+                nameSpan.textContent = player.userId;
+                if (player.id === localPlayer.id) {
+                    nameSpan.textContent += " (You)";
+                    entry.style.backgroundColor = "#4a4a4a";
+                    entry.style.border = "1px solid #ffd700";
+                }
+                
+                const coinSpan = document.createElement('span');
+                coinSpan.className = 'score-coins';
+                coinSpan.textContent = `${player.coins} 💎`;
+                
+                entry.appendChild(nameSpan);
+                entry.appendChild(coinSpan);
+                scoreboardList.appendChild(entry);
+            });
+        }
+        
+        async function cleanupStalePlayers() {
+            const now = Timestamp.now();
+            const cutoff = new Timestamp(now.seconds - 60, now.nanoseconds); // 1 minute ago
+            
+            players.forEach(async (player, id) => {
+                if (id === localPlayer.id) return; // Don't clean up self
+                
+                if (!player.lastSeen || player.lastSeen < cutoff) {
+                    // This player is stale, remove them
+                    try {
+                        const playerDocRef = doc(db, playersCollectionRef.path, id);
+                        await deleteDoc(playerDocRef);
+                        
+                        // Remove from local maps
+                        if (playerElements.has(id)) {
+                            playerElements.get(id).remove();
+                            playerElements.delete(id);
+                        }
+                        players.delete(id);
+                        updateScoreboard();
+                    } catch(e) {
+                        handleError("Error cleaning up stale player: " + e.message);
+                    }
+                }
+            });
+        }
+
+        // --- Utility Functions ---
+
+        // Added function to create particle effects
+        function createParticles(x, y) {
+            const particleCount = 8;
+            for (let i = 0; i < particleCount; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'particle';
+                gameArea.appendChild(particle);
+
+                // Start at the coin's center
+                const startX = x + COIN_SIZE / 2 - 4; // 4 is half particle width
+                const startY = y + COIN_SIZE / 2 - 4;
+
+                // End at a random position outwards
+                const angle = Math.random() * Math.PI * 2;
+                const distance = Math.random() * 50 + 25;
+                const endX = startX + Math.cos(angle) * distance;
+                const endY = startY + Math.sin(angle) * distance;
+
+                particle.style.transform = `translate(${startX}px, ${startY}px)`;
+                particle.style.opacity = 1;
+
+                // Force reflow
+                particle.offsetWidth;
+
+                // Animate outwards and fade
+                particle.style.transform = `translate(${endX}px, ${endY}px)`;
+                particle.style.opacity = 0;
+
+                // Remove from DOM after animation
+                setTimeout(() => {
+                    particle.remove();
+                }, 800); // Matches CSS transition duration
+            }
+        }
+
+        function handleError(message) {
+            console.error(message);
+            showMessage(message, true);
+        }
+
+        function showMessage(message, isError = false) {
+            const box = document.getElementById('message-box');
+            box.textContent = message;
+            box.style.backgroundColor = isError ? '#F44336' : '#4CAF50';
+            box.style.display = 'block';
+            box.style.opacity = 1;
+
+            setTimeout(() => {
+                box.style.opacity = 0;
+                setTimeout(() => {
+                    box.style.display = 'none';
+                }, 500);
+            }, 3000);
+        }
+        
+        function generatePlayerColor(id) {
+            let hash = 0;
+            for (let i = 0; i < id.length; i++) {
+                hash = id.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            let color = '#';
+            for (let i = 0; i < 3; i++) {
+                let value = (hash >> (i * 8)) & 0xFF;
+                // Ensure the color is not too dark
+                value = Math.max(80, value); 
+                color += ('00' + value.toString(16)).substr(-2);
+            }
+            return color;
+        }
+
+    </script>
 </body>
 </html>
